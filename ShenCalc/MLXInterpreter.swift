@@ -1,22 +1,23 @@
 import Foundation
 #if canImport(MLXLMCommon)
+import MLX
 import MLXLMCommon
 import MLXLLM
 import MLXVLM
-import MLXHuggingFace          // loadModel(...) + tokenizer loader convenience
+import MLXHuggingFace          // #hubDownloader / #huggingFaceTokenizerLoader macros
+import HuggingFace             // HubClient (used by the macro expansion)
+import Tokenizers              // swift-transformers (used by the macro expansion)
 import CoreImage
 
-// NOTE ON VERSIONS: mlx-swift-lm's model-loading entry point has been in flux.
-// This file targets the package's *documented* ChatSession API:
-//
-//   let model   = try await loadModel(using: TokenizersLoader(), id: "<hf-id>")
-//   let session = ChatSession(model, instructions: systemPrompt)
-//   let reply   = try await session.respond(to: prompt, image: .ciImage(ci))
-//
-// Pin mlx-swift-lm to a RELEASE TAG (not `main`) and, if the loader call differs
-// in your version, follow that release's README (the ChatSession + respond shape
-// is stable; only the `loadModel(...)` argument list moves). Build to a real
-// device — mlx-swift needs Metal and does not run on the simulator.
+// VERSION NOTE — verified against mlx-swift-lm 3.31.3. The model-load call is the
+// one line that tracks the package version; the ChatSession / respond shape is
+// stable. Required Swift packages (add both in Xcode):
+//   • https://github.com/ml-explore/mlx-swift-lm   (pin 3.31.3)
+//     products: MLXLLM, MLXVLM, MLXLMCommon, MLXHuggingFace
+//   • https://github.com/huggingface/swift-transformers (pin 1.3.x)
+//     products: Hub, Tokenizers          (provides the HuggingFace/Tokenizers modules)
+// If your pinned version's loader differs, copy the load call from the package's
+// LLMEval example. Build to a REAL device — mlx-swift needs Metal (no simulator).
 
 /// On-device interpreter: an MLX-hosted Gemma model translates English (or a
 /// photo of math) into shen-cas's bracket syntax. The model only parses intent;
@@ -26,17 +27,24 @@ import CoreImage
 final class MLXInterpreter: ObservableObject, MathInterpreter {
     @Published var status: String = "idle"
 
-    /// MLX-community model repos. Swap in any MLX-converted Gemma 4 build.
+    // MLX-community model repos (download on first use).
+    //   text:   gemma-3-1b-it-qat-4bit  (~733 MB) fits a FREE account (no memory
+    //           entitlement) on any modern iPhone — best default.
+    //   vision: gemma-4-e4b-it-4bit     (~5.2 GB, multimodal) needs a PAID account
+    //           + the increased-memory-limit entitlement + an 8 GB iPhone.
+    //           For a lighter vision model use mlx-community/gemma-3-4b-it-4bit (~3.4 GB).
     let textModelId: String
     let visionModelId: String
 
     private var textSession: ChatSession?
     private var visionSession: ChatSession?
 
-    init(textModelId: String = "mlx-community/gemma-3-1b-it-4bit",
-         visionModelId: String = "mlx-community/gemma-3-4b-it-4bit") {
+    init(textModelId: String = "mlx-community/gemma-3-1b-it-qat-4bit",
+         visionModelId: String = "mlx-community/gemma-4-e4b-it-4bit") {
         self.textModelId = textModelId
         self.visionModelId = visionModelId
+        // Bound the KV cache so long sessions don't run into the jetsam limit.
+        MLX.GPU.set(cacheLimit: 20 * 1024 * 1024)
     }
 
     var requiresModel: Bool { true }
@@ -68,7 +76,7 @@ final class MLXInterpreter: ObservableObject, MathInterpreter {
         if imageData != nil {
             if visionSession == nil {
                 status = "loading vision model…"
-                let model = try await loadModel(using: TokenizersLoader(), id: visionModelId)
+                let model = try await loadModelContainer(from: #hubDownloader(), using: #huggingFaceTokenizerLoader(), id: visionModelId)
                 visionSession = ChatSession(model, instructions: systemPrompt)
                 status = "ready"
             }
@@ -84,7 +92,7 @@ final class MLXInterpreter: ObservableObject, MathInterpreter {
         } else {
             if textSession == nil {
                 status = "loading model…"
-                let model = try await loadModel(using: TokenizersLoader(), id: textModelId)
+                let model = try await loadModelContainer(from: #hubDownloader(), using: #huggingFaceTokenizerLoader(), id: textModelId)
                 textSession = ChatSession(model, instructions: systemPrompt)
                 status = "ready"
             }

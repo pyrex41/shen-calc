@@ -50,24 +50,58 @@ xcodebuild -scheme ShenCalc -sdk iphonesimulator \
   EXCLUDED_ARCHS=x86_64 CODE_SIGNING_ALLOWED=NO build
 ```
 
-## Enabling Phase 2 (on-device Gemma, real device)
+## Run on your own iPhone with Gemma (Phase 2)
 
-mlx-swift needs Metal — it does **not** run on the simulator. On a real device:
+mlx-swift needs Metal, so this is **device only** (iOS 17+, iPhone 12 or newer;
+an 8 GB iPhone — 15 Pro / 16 — is strongly preferred). You can run on your own
+phone with a **free Apple ID**; a paid account is only needed for the big
+multimodal vision model.
 
-1. In `project.yml`, uncomment the `mlx-swift-lm` package + the three `MLX*`
-   product dependencies, and set `deploymentTarget: iOS: "17.0"`. Re-run
-   `xcodegen generate`. (Or add the package in Xcode: File ▸ Add Package
-   Dependencies ▸ `https://github.com/ml-explore/mlx-swift-lm` — pin a **release
-   tag**, not `main`; products `MLXLLM`, `MLXVLM`, `MLXLMCommon`, `MLXHuggingFace`.)
-2. The app's `ShenCalc.entitlements` already requests
-   `com.apple.developer.kernel.increased-memory-limit` (needed to hold the model
-   weights). Use a provisioning profile that grants it.
-3. Set the model ids in `MLXInterpreter.swift` to an MLX-converted Gemma build
-   (text + a multimodal VLM for photos). Weights download on first use.
+### Pick a model for your account
 
-`MLXInterpreter` activates automatically once the package is linked. Note: the
-exact `loadModel(...)` call tracks the package version — follow your pinned
-release's README if it differs (the `ChatSession` / `respond` shape is stable).
+| Account | Model | Size | Modes |
+|---|---|---|---|
+| **Free** (default) | `mlx-community/gemma-3-1b-it-qat-4bit` | ~733 MB | English → syntax (text) |
+| **Paid** + entitlement | `mlx-community/gemma-4-e4b-it-4bit` | ~5.2 GB | English **and** photo (multimodal) |
+
+Without the memory entitlement iOS kills an app around ~50% of RAM, so the small
+text model is the safe default (already set in `MLXInterpreter.swift`). The
+vision/photo model needs the entitlement (paid account) — see below.
+
+### Steps
+
+1. **Add the packages** (Xcode ▸ File ▸ Add Package Dependencies), or uncomment
+   them in `project.yml` + re-run `xcodegen generate`:
+   - `https://github.com/ml-explore/mlx-swift-lm` (pin **3.31.3**) → products
+     `MLXLLM`, `MLXVLM`, `MLXLMCommon`, `MLXHuggingFace`
+   - `https://github.com/huggingface/swift-transformers` (pin **1.3.x**) →
+     products `Hub`, `Tokenizers`
+2. **Set deployment target to iOS 17** (`project.yml` → `deploymentTarget`).
+3. **Sign for your device:** target ▸ Signing & Capabilities ▸ Team = your
+   *Personal Team* (free Apple ID), Automatically manage signing. Plug in the
+   phone, pick it as the run destination, ⌘R. First launch: on the phone,
+   Settings ▸ General ▸ VPN & Device Management ▸ trust your developer cert,
+   then run again. (Free profiles expire every 7 days — just re-run from Xcode.)
+4. **First run downloads the model** from Hugging Face (~0.7 GB for the default).
+   The UI shows the engine status; give it a minute on first launch.
+
+### Paid account → photo (vision) mode
+
+Add `CODE_SIGN_ENTITLEMENTS: ShenCalc/ShenCalc.entitlements` to the target
+(grants `increased-memory-limit`, already in the repo). The default
+`visionModelId` is `gemma-4-e4b-it-4bit`; for a lighter one use
+`mlx-community/gemma-3-4b-it-4bit` (~3.4 GB).
+
+### Notes
+
+- `MLXInterpreter` activates automatically once the packages are linked (it's
+  `#if canImport`-gated; the app builds fine without them).
+- The model only **translates intent** into shen-cas syntax — the CAS computes
+  the answer, so it can't be a wrong derivative, only rejected syntax.
+- The model-load call is verified against mlx-swift-lm **3.31.3**
+  (`loadModelContainer(from: #hubDownloader(), using: #huggingFaceTokenizerLoader(), id:)`).
+  If you bump the version and it differs, copy the load call from the package's
+  LLMEval example — only that one line moves.
 
 > Run Shen off the main thread with a large stack (see `ShenCAS.swift`) — the
 > tree-walked CAS reducer overflows a small stack.
