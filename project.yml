@@ -1,0 +1,56 @@
+name: ShenCalc
+options:
+  bundleIdPrefix: org.shenlanguage
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: YES
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGNING_ALLOWED: NO
+    SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    # The shenffi xcframework simulator slice is arm64-only (it targets Apple
+    # silicon). Exclude x86_64 so simulator links resolve on an arm64 Mac.
+    "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+# To enable the on-device Gemma natural-language / image input (Phase 2),
+# uncomment the package below + the MLX* product dependencies in the target,
+# bump deploymentTarget to iOS 17, and build to a REAL device (mlx-swift needs
+# Metal and does not run on the simulator). MLXInterpreter.swift activates
+# automatically once the package is present (it is #if canImport-gated).
+# packages:
+#   mlx-swift-lm:
+#     url: https://github.com/ml-explore/mlx-swift-lm
+#     branch: main
+targets:
+  ShenCalc:
+    type: application
+    platform: iOS
+    sources:
+      - ShenCalc
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.shenlanguage.ShenCalc
+        SWIFT_OBJC_BRIDGING_HEADER: ShenCalc/Bridging-Header.h
+        INFOPLIST_KEY_CFBundleDisplayName: ShenCalc
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/../shen-rust/target/ShenRust.xcframework/ios-arm64/Headers
+          - $(SRCROOT)/../shen-rust/target/ShenRust.xcframework/ios-arm64-simulator/Headers
+        OTHER_LDFLAGS:
+          - -lc++
+    dependencies:
+      - framework: ../shen-rust/target/ShenRust.xcframework
+        embed: false
+      # - package: mlx-swift-lm
+      #   product: MLXLLM
+      # - package: mlx-swift-lm
+      #   product: MLXVLM
+      # - package: mlx-swift-lm
+      #   product: MLXLMCommon

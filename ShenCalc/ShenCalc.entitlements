@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- MLX loads multi-GB model weights into unified memory; without this iOS
+         kills the app under memory pressure. Requires a provisioning profile
+         that grants the entitlement. -->
+    <key>com.apple.developer.kernel.increased-memory-limit</key>
+    <true/>
+</dict>
+</plist>
