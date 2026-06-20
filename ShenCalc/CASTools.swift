@@ -120,6 +120,56 @@ enum CASTools {
         return (tag, args)
     }
 
+    /// shen-cas evaluates exact integers and rationals, but its reader's
+    /// tokenizer has no notion of a decimal point — a literal like `0.2` comes
+    /// back as `error: tokenize: bad char .`. We rewrite every decimal literal
+    /// into an equivalent exact fraction before the expression reaches the
+    /// engine (`0.2` -> `(1/5)`, `3.14` -> `(157/50)`, `50000.0` -> `50000`).
+    ///
+    /// The fraction is parenthesised so it still composes correctly as an
+    /// operand — crucially under division, where `1/0.2` must become `1/(1/5)`
+    /// (= 5), not `1/1/5`. Pure integers are left untouched.
+    static func rewriteDecimals(_ s: String) -> String {
+        guard s.contains(".") else { return s }
+        // A decimal literal: digits with a dot on at least one side. A lone `.`
+        // (e.g. an ellipsis or stray dot) matches neither branch and is kept.
+        let pattern = "[0-9]*\\.[0-9]+|[0-9]+\\.[0-9]*"
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return s }
+        let ns = s as NSString
+        var result = ""
+        var last = 0
+        re.enumerateMatches(in: s, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+            guard let m = m else { return }
+            let r = m.range
+            result += ns.substring(with: NSRange(location: last, length: r.location - last))
+            result += fractionLiteral(ns.substring(with: r))
+            last = r.location + r.length
+        }
+        result += ns.substring(from: last)
+        return result
+    }
+
+    /// Turn a single decimal token (`"3.14"`, `".2"`, `"2."`) into a reduced
+    /// fraction string, parenthesised unless it's a whole number.
+    private static func fractionLiteral(_ token: String) -> String {
+        let parts = token.split(separator: ".", omittingEmptySubsequences: false)
+        let intPart = parts.first.map(String.init) ?? ""
+        let fracPart = parts.count > 1 ? String(parts[1]) : ""
+        let digits = intPart + fracPart
+        guard let numerator = Int(digits.isEmpty ? "0" : digits) else { return token }
+        var denominator = 1
+        for _ in 0..<fracPart.count { denominator *= 10 }
+        let g = gcd(numerator, denominator)
+        let n = numerator / g, d = denominator / g
+        return d == 1 ? "\(n)" : "(\(n)/\(d))"
+    }
+
+    private static func gcd(_ a: Int, _ b: Int) -> Int {
+        var a = abs(a), b = abs(b)
+        while b != 0 { (a, b) = (b, a % b) }
+        return a == 0 ? 1 : a
+    }
+
     /// Best-effort fix-ups so loose model output still reads in the CAS:
     /// lowercase / paren-form functions -> bracket form, `ln`/`e^` aliases.
     static func normalizeExpr(_ raw: String) -> String {

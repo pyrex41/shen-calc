@@ -189,7 +189,9 @@ struct ContentView: View {
             let interp: MathInterpreter = m.needsModel ? (nl ?? passthrough) : passthrough
             let casExpr: String
             do {
-                casExpr = try await interp.toCAS(text: raw, imageData: img)
+                // Rewrite decimal literals to exact fractions — the CAS reader
+                // can't tokenize a `.`, so floats would otherwise error out.
+                casExpr = CASTools.rewriteDecimals(try await interp.toCAS(text: raw, imageData: img))
             } catch {
                 entries.append(Entry(input: raw.isEmpty ? "[image]" : raw, cas: "",
                                      result: "error: \(error.localizedDescription)"))
@@ -225,6 +227,13 @@ struct ContentView: View {
         for c in cases {
             let raw = await cas.reduce(c)
             print("CASE \(c)  =>  raw=\(raw)  pretty=\(MathPretty.render(raw))")
+        }
+        // Float handling: decimals are rewritten to exact fractions before the CAS.
+        let floatCases = ["50000 * 0.2", "0.2", "3.14", "1 / 0.2", "2.5 + 2.5", "10000.0"]
+        for c in floatCases {
+            let expr = CASTools.rewriteDecimals(c)
+            let raw = await cas.reduce(expr)
+            print("FLOAT \(c)  =>  cas=\(expr)  raw=\(raw)  pretty=\(MathPretty.render(raw))")
         }
         // Tool-call parser checks (no model needed).
         let toolChecks = [
