@@ -36,8 +36,10 @@ struct ContentView: View {
     @State private var photoData: Data?
     @State private var working = false
     @FocusState private var inputFocused: Bool
+    @StateObject private var fieldController = MathFieldController()
 
-    private let examples = ["D[Sin[x], x]", "D[x^3, x]", "6/4", "a+b*c", "D[Exp[x], x]"]
+    private let examples = ["D[Sin[x], x]", "Integrate[x^2, x]", "Factor[x^2 - 1]",
+                            "Solve[x^2 - 4, x]", "Expand[(x+1)^2]", "6/4"]
     private let accent = Color(red: 0.45, green: 0.85, blue: 0.72)
 
     var body: some View {
@@ -146,10 +148,14 @@ struct ContentView: View {
                             .foregroundStyle(photoData == nil ? .secondary : accent)
                     }
                 }
-                TextField(mode.placeholder, text: $input)
-                    .font(.system(.body, design: .monospaced))
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    .focused($inputFocused).submitLabel(.go).onSubmit(submit)
+                CaretTextField(text: $input,
+                               placeholder: mode.placeholder,
+                               useMathKeyboard: mode == .syntax,
+                               accent: accent,
+                               controller: fieldController,
+                               onSubmit: submit)
+                    .frame(height: 24)
+                    .focused($inputFocused)
                     .padding(.horizontal, 14).padding(.vertical, 11)
                     .background(Color.white.opacity(0.06), in: Capsule())
                 Button(action: submit) {

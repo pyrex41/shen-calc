@@ -18,12 +18,28 @@ syntax the CAS rejects.
 
 ## Status
 
-- **Phase 1 (done, verified on the simulator):** the calculator. Type shen-cas
-  syntax — `D[Sin[x], x]` → `[Cos x]`, `D[x^3, x]` → `[Times [Power x 2] 3]`,
-  `6/4` → `[3 / 2]`. The CAS runs fully on-device with no network, no model.
-- **Phase 2 (wired, opt-in, device-only):** English + photo input via an
+- **Phase 1 (done, verified on device):** the calculator + a custom math
+  keyboard. Type shen-cas syntax — `D[Sin[x], x]` → `[Cos x]`,
+  `Integrate[x^2, x]` → `[Times [Power x 3] [1 / 3]]`, `Factor[x^2 - 1]` →
+  `[Times [Plus x 1] [Plus x -1]]`, `Solve[x^2 - 4, x]` → `[List 2 -2]`. The CAS
+  runs fully on-device with no network, no model.
+- **Phase 2 (built into the device build):** English + photo input via an
   on-device Gemma model (MLX). Code is in `MLXInterpreter.swift`, gated behind
-  `#if canImport(MLXLMCommon)` so the app builds without it.
+  `#if canImport(MLXLMCommon)`. The MLX packages are now linked in `project.yml`
+  (so a device build activates it); they build only on a real device (Metal), so
+  simulator builds still work — `canImport` simply sees no MLX there.
+
+## Math keyboard
+
+Syntax mode replaces the system keyboard with a custom calculator keyboard
+(`MathKeyboard.swift`, installed as the text field's `inputView`). The accent row
+scrolls through the operations the embedded CAS actually evaluates — `d/dx`,
+`∫ dx`, `Solve`, `Simplify`, `Expand`, `Factor`, `sin`/`cos`/`tan`, `eˣ`, `ln`,
+`√` — each inserting a template (`D[▮, x]`, `Sin[▮]`, …) with the caret dropped
+where you type next. Below is a numeric/operator grid (digits, `x` `y`, `^` `(` `)`
+`,` and `+ − × ÷`) plus delete / clear / ↵. English and Photo modes fall back to
+the system keyboard. (`Series`/`Limit` echo unevaluated in this shaken slice, so
+they're intentionally left off the keys.)
 
 ## Architecture
 
@@ -70,13 +86,16 @@ vision/photo model needs the entitlement (paid account) — see below.
 
 ### Steps
 
-1. **Add the packages** (Xcode ▸ File ▸ Add Package Dependencies), or uncomment
-   them in `project.yml` + re-run `xcodegen generate`:
-   - `https://github.com/ml-explore/mlx-swift-lm` (pin **3.31.3**) → products
-     `MLXLLM`, `MLXVLM`, `MLXLMCommon`, `MLXHuggingFace`
-   - `https://github.com/huggingface/swift-transformers` (pin **1.3.x**) →
-     products `Hub`, `Tokenizers`
-2. **Set deployment target to iOS 17** (`project.yml` → `deploymentTarget`).
+1. **Packages are already linked** in `project.yml` (mlx-swift-lm **3.31.3**:
+   `MLXLLM`/`MLXVLM`/`MLXLMCommon`/`MLXHuggingFace`; swift-transformers **1.3.x**:
+   `Hub`/`Tokenizers`) and the deployment target is **iOS 17**. Just
+   `xcodegen generate` and resolve packages (`xcodebuild
+   -resolvePackageDependencies`).
+2. **One-time toolchain bits** the MLX build needs:
+   - Trust the package macros: in Xcode it's a click; on the CLI add
+     `-skipMacroValidation` to `xcodebuild`.
+   - Install the Metal Toolchain (MLX compiles Metal shaders at build time):
+     `xcodebuild -downloadComponent MetalToolchain` (~690 MB, one time).
 3. **Sign for your device:** target ▸ Signing & Capabilities ▸ Team = your
    *Personal Team* (free Apple ID), Automatically manage signing. Plug in the
    phone, pick it as the run destination, ⌘R. First launch: on the phone,
