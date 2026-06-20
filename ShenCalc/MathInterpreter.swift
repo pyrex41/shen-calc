@@ -24,7 +24,7 @@ struct PassthroughInterpreter: MathInterpreter {
 /// MLX package is linked (Phase 2) AND on a device that can run it.
 enum NLEngine {
     static var available: Bool {
-        #if canImport(MLXLMCommon)
+        #if canImport(MLXLMCommon) && !targetEnvironment(simulator)
         return true
         #else
         return false
@@ -33,7 +33,7 @@ enum NLEngine {
 
     @MainActor
     static func make() -> MathInterpreter? {
-        #if canImport(MLXLMCommon)
+        #if canImport(MLXLMCommon) && !targetEnvironment(simulator)
         return MLXInterpreter()
         #else
         return nil

@@ -52,9 +52,10 @@ struct ContentView: View {
         .background(Color(red: 0.06, green: 0.07, blue: 0.09).ignoresSafeArea())
         .onAppear { if nl == nil { nl = NLEngine.make() } }
         .onChange(of: cas.isReady) { ready in
-            guard ready, entries.isEmpty,
-                  ProcessInfo.processInfo.environment["SHENCALC_DEMO"] != nil else { return }
-            Task { await seedDemo() }
+            guard ready else { return }
+            let env = ProcessInfo.processInfo.environment
+            if env["SHENCALC_SELFTEST"] != nil { Task { await runSelfTest() } }
+            if entries.isEmpty, env["SHENCALC_DEMO"] != nil { Task { await seedDemo() } }
         }
         .onChange(of: photoItem) { item in
             guard let item else { return }
@@ -194,7 +195,7 @@ struct ContentView: View {
                                      result: "error: \(error.localizedDescription)"))
                 working = false; return
             }
-            let result = await cas.reduce(casExpr)
+            let result = MathPretty.render(await cas.reduce(casExpr))
             let shown = raw.isEmpty ? "[image]" : raw
             entries.append(Entry(input: shown, cas: casExpr, result: result))
             working = false
@@ -202,10 +203,36 @@ struct ContentView: View {
     }
 
     private func seedDemo() async {
-        for expr in ["D[Sin[x], x]", "D[x^3, x]", "6/4", "D[Exp[x], x]"] {
-            let result = await cas.reduce(expr)
+        for expr in ["D[Sin[x], x]", "Integrate[x^2, x]", "Factor[x^2 - 1]", "Expand[(x+1)^2]"] {
+            let result = MathPretty.render(await cas.reduce(expr))
             entries.append(Entry(input: expr, cas: expr, result: result))
         }
+    }
+
+    /// Headless smoke test of every operation, gated by SHENCALC_SELFTEST.
+    /// Prints raw CAS output + the human-readable render so the simulator console
+    /// shows exactly what each op produces (and surfaces any crash).
+    private func runSelfTest() async {
+        print("=== SHENCALC SELFTEST START ===")
+        let cases = [
+            "D[Sin[x], x]", "D[Cos[x], x]", "D[Tan[x], x]", "D[Exp[x], x]",
+            "D[Log[x], x]", "D[Sqrt[x], x]", "D[x^3, x]",
+            "Integrate[x^2, x]", "Integrate[Sin[x], x]", "Integrate[1/x, x]",
+            "Simplify[a + a]", "Expand[(x+1)^2]", "Expand[(x+1)*(x-1)]",
+            "Factor[x^2 - 1]", "Factor[x^2 + 2*x + 1]",
+            "Solve[x^2 - 4, x]", "6/4", "2^10", "a+b*c", "Sin[0]",
+        ]
+        for c in cases {
+            let raw = await cas.reduce(c)
+            print("CASE \(c)  =>  raw=\(raw)  pretty=\(MathPretty.render(raw))")
+        }
+        // Tool-call parser checks (no model needed).
+        let toolChecks = [
+            "INTEGRATE(x^2; x)", "D(Sin[x]; x)", "FACTOR(x^2 - 1)",
+            "SOLVE(x^2 - 4; x)", "EVAL(2 + 3)", "integrate(sin(x); x)",
+        ]
+        for t in toolChecks { print("TOOL \(t)  =>  \(CASTools.parse(t))") }
+        print("=== SHENCALC SELFTEST DONE ===")
     }
 }
 

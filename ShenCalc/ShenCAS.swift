@@ -16,7 +16,11 @@ final class ShenCAS: ObservableObject {
 
     init() {
         let worker = Thread { [weak self] in self?.run() }
-        worker.stackSize = 256 * 1024 * 1024   // tree-walked CAS recursion needs room
+        // The tree-walked CAS reducer needs ~16 MB of stack (8 MB overflows on
+        // boot); 64 MB gives a 4× margin. NOT larger — iOS appears to reject an
+        // over-large NSThread stack and silently fall back to the tiny default,
+        // which let shallow ops (D[…]) run but crashed deeper ones (Integrate).
+        worker.stackSize = 64 * 1024 * 1024
         worker.name = "shen-cas"
         worker.start()
     }

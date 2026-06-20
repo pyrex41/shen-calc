@@ -1,5 +1,8 @@
 import Foundation
-#if canImport(MLXLMCommon)
+// MLX needs Metal, so it is device-only. Even though the package links for the
+// simulator, exclude this file there (the model can't run, and the macros don't
+// expand) so simulator builds stay clean for CAS testing.
+#if canImport(MLXLMCommon) && !targetEnvironment(simulator)
 import MLX
 import MLXLMCommon
 import MLXLLM
@@ -49,28 +52,9 @@ final class MLXInterpreter: ObservableObject, MathInterpreter {
 
     var requiresModel: Bool { true }
 
-    /// System prompt that pins the model to shen-cas's grammar.
-    private var systemPrompt: String {
-        """
-        You convert math questions into a strict bracket syntax for a computer
-        algebra system. Output ONLY the expression — no prose, no explanation,
-        no markdown, no equals sign.
-
-        Grammar:
-        - numbers and variables as-is: 2, 42, x, y
-        - infix arithmetic: a + b, a - b, a * b, a / b, a^b
-        - functions in brackets: Sin[x], Cos[x], Exp[x], Log[x], Sqrt[x]
-        - derivative of f w.r.t. v: D[f, v]
-        - simplification: Simplify[expr]
-
-        Examples:
-        "derivative of sin x"        -> D[Sin[x], x]
-        "what is two plus three"     -> 2 + 3
-        "differentiate x cubed"      -> D[x^3, x]
-        "e to the x, differentiated" -> D[Exp[x], x]
-        "simplify a plus a"          -> Simplify[a + a]
-        """
-    }
+    /// Tool-call menu + grammar, generated from the shared CAS tool registry so
+    /// the model always knows every operation the CAS can actually evaluate.
+    private var systemPrompt: String { CASTools.systemPrompt }
 
     func toCAS(text: String, imageData: Data?) async throws -> String {
         if imageData != nil {
@@ -88,7 +72,7 @@ final class MLXInterpreter: ObservableObject, MathInterpreter {
             } else {
                 reply = try await session.respond(to: prompt)
             }
-            return Self.cleanup(reply)
+            return CASTools.parse(reply)
         } else {
             if textSession == nil {
                 status = "loading model…"
@@ -97,22 +81,12 @@ final class MLXInterpreter: ObservableObject, MathInterpreter {
                 status = "ready"
             }
             guard let session = textSession else { throw err("model unavailable") }
-            return Self.cleanup(try await session.respond(to: text))
+            return CASTools.parse(try await session.respond(to: text))
         }
     }
 
     private func err(_ m: String) -> NSError {
         NSError(domain: "MLXInterpreter", code: 1, userInfo: [NSLocalizedDescriptionKey: m])
-    }
-
-    /// Keep only the first non-empty line; strip code fences / stray prose.
-    static func cleanup(_ s: String) -> String {
-        var t = s.replacingOccurrences(of: "```", with: "")
-        t = t.replacingOccurrences(of: "Output:", with: "")
-        let line = t.split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first(where: { !$0.isEmpty }) ?? t
-        return line.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 #endif
