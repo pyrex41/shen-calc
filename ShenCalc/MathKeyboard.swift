@@ -1,4 +1,5 @@
 import SwiftUI
+#if os(iOS)
 import UIKit
 
 // A custom on-screen math keyboard for shen-cas syntax. It is installed as the
@@ -229,3 +230,45 @@ struct MathKeyboard: View {
         }
     }
 }
+
+#elseif os(macOS)
+
+// macOS has no software keyboard, so the custom on-screen math keypad doesn't
+// apply — Syntax mode uses the physical keyboard with a plain text field. These
+// shims keep the same API surface ContentView depends on (`MathFieldController`
+// + `CaretTextField`) so the shared UI compiles unchanged on the Mac.
+
+/// Same type ContentView holds as a `@StateObject`. The caret-mutation methods
+/// are no-ops on macOS (there's no on-screen keypad to drive them); `submit`
+/// still forwards so `⌘`-less Return works.
+final class MathFieldController: ObservableObject {
+    var onSubmit: () -> Void = {}
+    func insert(_ text: String, caretBack: Int = 0) {}
+    func deleteBackward() {}
+    func clear() {}
+    func submit() { onSubmit() }
+}
+
+/// macOS counterpart to the iOS `CaretTextField`: a plain SwiftUI text field with
+/// the same initializer signature. `useMathKeyboard` is ignored (no soft keyboard
+/// on the Mac); Return submits.
+struct CaretTextField: View {
+    @Binding var text: String
+    let placeholder: String
+    let useMathKeyboard: Bool
+    let accent: Color
+    let controller: MathFieldController
+    let onSubmit: () -> Void
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(.body, design: .monospaced))
+            .foregroundStyle(.white)
+            .tint(accent)
+            .autocorrectionDisabled(true)
+            .onSubmit { onSubmit() }
+            .onAppear { controller.onSubmit = onSubmit }
+    }
+}
+#endif
