@@ -2,7 +2,8 @@ name: ShenCalc
 options:
   bundleIdPrefix: org.shenlanguage
   deploymentTarget:
-    iOS: "17.0"   # mlx-swift (on-device Gemma) requires iOS 17 + Metal
+    iOS: "17.0"     # mlx-swift (on-device Gemma) requires iOS 17 + Metal
+    macOS: "14.0"   # mlx-swift requires macOS 14+ (Metal); native Mac app target
   createIntermediateGroups: true
 settings:
   base:
@@ -48,6 +49,47 @@ targets:
         HEADER_SEARCH_PATHS:
           - $(SRCROOT)/../shen-rust/target/ShenRust.xcframework/ios-arm64/Headers
           - $(SRCROOT)/../shen-rust/target/ShenRust.xcframework/ios-arm64-simulator/Headers
+        OTHER_LDFLAGS:
+          - -lc++
+    dependencies:
+      - framework: ../shen-rust/target/ShenRust.xcframework
+        embed: false
+      - package: mlx-swift-lm
+        product: MLXLLM
+      - package: mlx-swift-lm
+        product: MLXVLM
+      - package: mlx-swift-lm
+        product: MLXLMCommon
+      - package: mlx-swift-lm
+        product: MLXHuggingFace
+      - package: swift-transformers
+        product: Hub
+      - package: swift-transformers
+        product: Tokenizers
+  # ── Native macOS app ───────────────────────────────────────────────────────
+  # Shares every source file with the iOS target. MathKeyboard.swift's UIKit
+  # soft-keyboard is #if os(iOS)-gated with a plain-TextField macOS shim; the CAS,
+  # the SwiftUI UI, and MLX are all cross-platform. Unlike the iOS simulator, MLX
+  # runs natively here, so English/Photo + the model picker are exercisable.
+  ShenCalcMac:
+    type: application
+    platform: macOS
+    sources:
+      - ShenCalc
+    settings:
+      base:
+        PRODUCT_NAME: ShenCalc
+        PRODUCT_BUNDLE_IDENTIFIER: org.shenlanguage.ShenCalcMac
+        SWIFT_OBJC_BRIDGING_HEADER: ShenCalc/Bridging-Header.h
+        INFOPLIST_KEY_CFBundleDisplayName: ShenCalc
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.education"
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        # macOS-only platform/arch overrides (the base settings target iOS).
+        SUPPORTED_PLATFORMS: macosx
+        SUPPORTS_MACCATALYST: NO
+        TARGETED_DEVICE_FAMILY: ""
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/../shen-rust/target/ShenRust.xcframework/macos-arm64/Headers
         OTHER_LDFLAGS:
           - -lc++
     dependencies:

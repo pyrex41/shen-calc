@@ -142,3 +142,29 @@ Add `CODE_SIGN_ENTITLEMENTS: ShenCalc/ShenCalc.entitlements` to the target
 
 > Run Shen off the main thread with a large stack (see `ShenCAS.swift`) — the
 > tree-walked CAS reducer overflows a small stack.
+
+## Run as a native macOS app
+
+There's a native macOS target (`ShenCalcMac`) that shares every source file with
+the iOS app — same Rust CAS, same SwiftUI UI, same MLX model stack. Unlike the
+iOS *simulator* (which can't run MLX/Metal), MLX runs natively on Apple silicon,
+so **English/Photo modes and the model picker actually work on the Mac** — handy
+for iterating on the on-device model without an iPhone.
+
+```sh
+# 1. Build the Rust CAS with a macOS slice (adds macos-arm64 to the xcframework)
+../shen-rust/crates/shenffi/build-xcframework.sh
+
+# 2. Generate the project and build/run the Mac target
+xcodegen generate
+xcodebuild -scheme ShenCalcMac -destination 'platform=macOS' \
+  -derivedDataPath build-mac -skipMacroValidation build
+open build-mac/Build/Products/Debug/ShenCalc.app
+```
+
+Notes:
+- Requires **macOS 14+** on Apple silicon (MLX needs Metal).
+- The on-screen math keypad is iOS-only; on the Mac, Syntax mode uses a plain
+  text field with the physical keyboard (`MathKeyboard.swift` is
+  `#if os(iOS)`-gated with a macOS shim).
+- First use of English/Photo downloads the selected model from Hugging Face.
