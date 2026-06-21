@@ -1,0 +1,32 @@
+# Standalone Cargo project — a Rust/iced implementation of ShenCalc, sibling to
+# the SwiftUI app in this repo. It embeds the shen-cas engine by path-depending
+# on the `shenffi` crate in the neighbouring shen-rust checkout (same as the
+# Swift app, which links ../shen-rust/target/ShenRust.xcframework).
+[workspace]
+
+[package]
+name = "shencalc-iced"
+version = "0.1.0"
+edition = "2021"
+license = "BSD-3-Clause"
+description = "ShenCalc — a native cross-platform symbolic calculator GUI (iced) over the shen-cas engine."
+
+[[bin]]
+name = "shencalc-iced"
+path = "src/main.rs"
+
+[features]
+default = []
+# On-device English mode: a small local model (Qwen3-0.6B GGUF via candle) maps
+# NL → the CAS tool grammar. Heavy to build, so it's opt-in:
+# `cargo run --release --features nl`.
+nl = ["dep:candle-core", "dep:candle-transformers", "dep:tokenizers", "dep:hf-hub"]
+
+[dependencies]
+shenffi = { path = "../../shen-rust/crates/shenffi" }
+iced = "0.14"
+regex = "1"
+candle-core = { version = "0.10", features = ["metal"], optional = true }
+candle-transformers = { version = "0.10", optional = true }
+tokenizers = { version = "0.21", optional = true }
+hf-hub = { version = "0.3", optional = true }
