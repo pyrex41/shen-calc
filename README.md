@@ -75,14 +75,32 @@ multimodal vision model.
 
 ### Pick a model for your account
 
-| Account | Model | Size | Modes |
-|---|---|---|---|
-| **Free** (default) | `mlx-community/gemma-3-1b-it-qat-4bit` | ~733 MB | English → syntax (text) |
-| **Paid** + entitlement | `mlx-community/gemma-4-e4b-it-4bit` | ~5.2 GB | English **and** photo (multimodal) |
+The **text** model is switchable at runtime from a picker in English/Photo mode
+(no rebuild). Because the CAS validates every model output, a smaller model is
+low-risk — the worst case is rejected syntax, never a wrong answer — so it's
+worth A/B-ing the lighter options:
 
-Without the memory entitlement iOS kills an app around ~50% of RAM, so the small
-text model is the safe default (already set in `MLXInterpreter.swift`). The
-vision/photo model needs the entitlement (paid account) — see below.
+| Text model | Size | Notes |
+|---|---|---|
+| `mlx-community/gemma-3-270m-it-4bit` | ~0.2 GB | Lightest; may need a firmer prompt to hit the grammar reliably |
+| `mlx-community/Qwen3-0.6B-4bit` | ~0.4 GB | Best accuracy-for-size; strong at the tool-call grammar |
+| `mlx-community/gemma-3-1b-it-qat-4bit` | ~0.7 GB | **Default** — the known-good Phase 2 model |
+
+All three are 4-bit and fit a **free** account (no memory entitlement). The
+choice is persisted (`@AppStorage`); switching reloads the engine lazily, so the
+new model downloads on next use. The catalog lives in `TextModel.all`
+(`MathInterpreter.swift`).
+
+The **photo/vision** model is separate and needs a paid account + the
+`increased-memory-limit` entitlement:
+
+| Account | Vision model | Size | Modes |
+|---|---|---|---|
+| **Paid** + entitlement | `mlx-community/gemma-4-e4b-it-4bit` | ~5.2 GB | photo (multimodal) |
+
+Without the memory entitlement iOS kills an app around ~50% of RAM, so a small
+text model is the safe default. The vision/photo model needs the entitlement —
+see below.
 
 ### Steps
 

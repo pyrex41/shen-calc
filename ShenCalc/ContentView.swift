@@ -28,6 +28,10 @@ struct ContentView: View {
     @EnvironmentObject private var cas: ShenCAS
     private let passthrough = PassthroughInterpreter()
     @State private var nl: MathInterpreter? = nil
+    // Selected on-device text model. Persisted so an A/B choice survives relaunch;
+    // changing it rebuilds the engine (which drops the cached session, so the new
+    // model downloads/loads on next use).
+    @AppStorage("shencalc.textModelId") private var textModelId = TextModel.defaultId
 
     @State private var entries: [Entry] = []
     @State private var input = ""
@@ -50,7 +54,8 @@ struct ContentView: View {
             composer
         }
         .background(Color(red: 0.06, green: 0.07, blue: 0.09).ignoresSafeArea())
-        .onAppear { if nl == nil { nl = NLEngine.make() } }
+        .onAppear { if nl == nil { nl = NLEngine.make(textModelId: textModelId) } }
+        .onChange(of: textModelId) { id in nl = NLEngine.make(textModelId: id) }
         .onChange(of: cas.isReady) { ready in
             guard ready else { return }
             let env = ProcessInfo.processInfo.environment
@@ -127,6 +132,35 @@ struct ContentView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.06)))
     }
 
+    /// Lets the user A/B the on-device text model (smaller = lighter download,
+    /// larger = more reliable grammar). Switching reloads the engine lazily.
+    private var modelPicker: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "cpu").font(.caption2)
+            Text("Text model").font(.caption2)
+            Spacer()
+            Menu {
+                Picker("Text model", selection: $textModelId) {
+                    ForEach(TextModel.all) { m in
+                        Text("\(m.name) · \(m.size)").tag(m.id)
+                    }
+                }
+            } label: {
+                let m = TextModel.named(textModelId)
+                HStack(spacing: 5) {
+                    Text(m.name).font(.caption.weight(.medium))
+                    Text(m.size).font(.caption2).foregroundStyle(.secondary)
+                    Image(systemName: "chevron.up.chevron.down").font(.caption2)
+                }
+                .foregroundStyle(accent)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(accent.opacity(0.12), in: Capsule())
+            }
+        }
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var composer: some View {
         VStack(spacing: 8) {
             Picker("Mode", selection: $mode) {
@@ -139,6 +173,8 @@ struct ContentView: View {
                     .font(.caption2).foregroundStyle(.orange)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            if mode.needsModel && NLEngine.available { modelPicker }
 
             HStack(spacing: 10) {
                 if mode == .photo {
