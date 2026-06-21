@@ -6,3 +6,6 @@ DerivedData/
 .swiftpm/
 *.xcuserstate
 .DS_Store
+# Rust (shencalc-iced)
+target/
+shencalc-iced/target/
