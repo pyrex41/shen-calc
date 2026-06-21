@@ -20,6 +20,33 @@ struct PassthroughInterpreter: MathInterpreter {
     }
 }
 
+/// An on-device text model the user can pick between at runtime. Because the CAS
+/// validates every model output, trying a smaller/faster model is low-risk — the
+/// worst case is rejected syntax, never a wrong answer — so we expose the choice
+/// rather than hard-coding one. Defined outside the MLX `#if` so the picker still
+/// renders (and persists a choice) on the simulator, where the engine can't run.
+struct TextModel: Identifiable, Hashable {
+    let id: String      // Hugging Face repo id (mlx-community/…), passed to the loader
+    let name: String    // short label for the picker
+    let size: String    // approximate on-disk download / memory footprint
+
+    /// Smallest → largest. All are 4-bit and fit a free account (no memory
+    /// entitlement); the smaller two trade accuracy for a much lighter download.
+    static let all: [TextModel] = [
+        TextModel(id: "mlx-community/gemma-3-270m-it-4bit",   name: "Gemma 3 270m", size: "~0.2 GB"),
+        TextModel(id: "mlx-community/Qwen3-0.6B-4bit",        name: "Qwen3 0.6B",   size: "~0.4 GB"),
+        TextModel(id: "mlx-community/gemma-3-1b-it-qat-4bit", name: "Gemma 3 1B",   size: "~0.7 GB"),
+    ]
+
+    /// The known-good default — unchanged from Phase 2 so behaviour only differs
+    /// once the user deliberately picks a lighter model.
+    static let defaultId = "mlx-community/gemma-3-1b-it-qat-4bit"
+
+    static func named(_ id: String) -> TextModel {
+        all.first { $0.id == id } ?? all.first { $0.id == defaultId } ?? all[2]
+    }
+}
+
 /// Resolves the natural-language / image interpreter. Present only when the
 /// MLX package is linked (Phase 2) AND on a device that can run it.
 enum NLEngine {
@@ -32,9 +59,9 @@ enum NLEngine {
     }
 
     @MainActor
-    static func make() -> MathInterpreter? {
+    static func make(textModelId: String = TextModel.defaultId) -> MathInterpreter? {
         #if canImport(MLXLMCommon) && !targetEnvironment(simulator)
-        return MLXInterpreter()
+        return MLXInterpreter(textModelId: textModelId)
         #else
         return nil
         #endif
