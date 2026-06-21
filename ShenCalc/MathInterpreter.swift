@@ -38,9 +38,10 @@ struct TextModel: Identifiable, Hashable {
         TextModel(id: "mlx-community/gemma-3-1b-it-qat-4bit", name: "Gemma 3 1B",   size: "~0.7 GB"),
     ]
 
-    /// The known-good default — unchanged from Phase 2 so behaviour only differs
-    /// once the user deliberately picks a lighter model.
-    static let defaultId = "mlx-community/gemma-3-1b-it-qat-4bit"
+    /// Default to the lighter Qwen3-0.6B: ~2× faster than gemma-3-1b on Apple
+    /// silicon and the strongest tool-grammar follower for its size. The picker
+    /// still offers the smaller gemma-3-270m and the heavier gemma-3-1b.
+    static let defaultId = "mlx-community/Qwen3-0.6B-4bit"
 
     static func named(_ id: String) -> TextModel {
         all.first { $0.id == id } ?? all.first { $0.id == defaultId } ?? all[2]
