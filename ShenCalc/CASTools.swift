@@ -128,12 +128,17 @@ enum CASTools {
     ///
     /// The fraction is parenthesised so it still composes correctly as an
     /// operand — crucially under division, where `1/0.2` must become `1/(1/5)`
-    /// (= 5), not `1/1/5`. Pure integers are left untouched.
+    /// (= 5), not `1/1/5`. Pure integers are left untouched. Scientific notation
+    /// is folded in too (`2.5e3` -> `2500`, `2.5e-3` -> `(1/400)`), so the
+    /// mantissa is never rewritten in isolation.
     static func rewriteDecimals(_ s: String) -> String {
         guard s.contains(".") else { return s }
-        // A decimal literal: digits with a dot on at least one side. A lone `.`
-        // (e.g. an ellipsis or stray dot) matches neither branch and is kept.
-        let pattern = "[0-9]*\\.[0-9]+|[0-9]+\\.[0-9]*"
+        // A decimal literal: digits with a dot on at least one side, plus an
+        // optional `e[+-]?digits` exponent so a value like `2.5e10` is consumed
+        // whole. A lone `.` (e.g. an ellipsis or stray dot) matches neither
+        // branch and is kept.
+        let exp = "([eE][-+]?[0-9]+)?"
+        let pattern = "([0-9]*\\.[0-9]+|[0-9]+\\.[0-9]*)\(exp)"
         guard let re = try? NSRegularExpression(pattern: pattern) else { return s }
         let ns = s as NSString
         var result = ""
@@ -149,16 +154,35 @@ enum CASTools {
         return result
     }
 
-    /// Turn a single decimal token (`"3.14"`, `".2"`, `"2."`) into a reduced
-    /// fraction string, parenthesised unless it's a whole number.
+    /// Turn a single decimal token (`"3.14"`, `".2"`, `"2."`, `"2.5e-3"`) into a
+    /// reduced fraction string, parenthesised unless it's a whole number. All
+    /// arithmetic is overflow-checked: a value too large to represent exactly in
+    /// `Int` is returned verbatim for the engine to handle rather than wrapping
+    /// or trapping.
     private static func fractionLiteral(_ token: String) -> String {
-        let parts = token.split(separator: ".", omittingEmptySubsequences: false)
+        // Peel off an optional exponent ("2.5e-3" -> mantissa "2.5", exp -3).
+        var mantissa = Substring(token)
+        var exponent = 0
+        if let e = token.firstIndex(where: { $0 == "e" || $0 == "E" }) {
+            mantissa = token[token.startIndex..<e]
+            guard let parsed = Int(token[token.index(after: e)...]) else { return token }
+            exponent = parsed
+        }
+        let parts = mantissa.split(separator: ".", omittingEmptySubsequences: false)
         let intPart = parts.first.map(String.init) ?? ""
         let fracPart = parts.count > 1 ? String(parts[1]) : ""
         let digits = intPart + fracPart
-        guard let numerator = Int(digits.isEmpty ? "0" : digits) else { return token }
+        guard var numerator = Int(digits.isEmpty ? "0" : digits) else { return token }
+        // Net power of ten: the exponent, less one place per fractional digit.
+        // Positive scales the numerator, negative the denominator.
         var denominator = 1
-        for _ in 0..<fracPart.count { denominator *= 10 }
+        var scale = exponent - fracPart.count
+        func times10(_ x: Int) -> Int? {
+            let (r, overflow) = x.multipliedReportingOverflow(by: 10)
+            return overflow ? nil : r
+        }
+        while scale > 0 { guard let n = times10(numerator) else { return token }; numerator = n; scale -= 1 }
+        while scale < 0 { guard let d = times10(denominator) else { return token }; denominator = d; scale += 1 }
         let g = gcd(numerator, denominator)
         let n = numerator / g, d = denominator / g
         return d == 1 ? "\(n)" : "(\(n)/\(d))"

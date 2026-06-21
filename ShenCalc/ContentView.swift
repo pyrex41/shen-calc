@@ -228,12 +228,19 @@ struct ContentView: View {
             let raw = await cas.reduce(c)
             print("CASE \(c)  =>  raw=\(raw)  pretty=\(MathPretty.render(raw))")
         }
-        // Float handling: decimals are rewritten to exact fractions before the CAS.
-        let floatCases = ["50000 * 0.2", "0.2", "3.14", "1 / 0.2", "2.5 + 2.5", "10000.0"]
-        for c in floatCases {
+        // Float handling: decimals are rewritten to exact fractions before the
+        // CAS. The rewrite is pure, so assert its output (and flag any drift);
+        // the engine result is printed alongside for eyeballing.
+        let floatCases: [(String, String)] = [
+            ("50000 * 0.2", "50000 * (1/5)"), ("0.2", "(1/5)"), ("3.14", "(157/50)"),
+            ("1 / 0.2", "1 / (1/5)"), ("2.5 + 2.5", "(5/2) + (5/2)"), ("10000.0", "10000"),
+            ("2.5e3", "2500"), ("2.5e-3", "(1/400)"), ("x^2.5", "x^(5/2)"),
+        ]
+        for (c, expect) in floatCases {
             let expr = CASTools.rewriteDecimals(c)
+            let ok = expr == expect ? "PASS" : "FAIL(expected \(expect))"
             let raw = await cas.reduce(expr)
-            print("FLOAT \(c)  =>  cas=\(expr)  raw=\(raw)  pretty=\(MathPretty.render(raw))")
+            print("FLOAT \(ok) \(c)  =>  cas=\(expr)  raw=\(raw)  pretty=\(MathPretty.render(raw))")
         }
         // Tool-call parser checks (no model needed).
         let toolChecks = [
