@@ -110,6 +110,124 @@ fn cas_reduce(interp: &mut Interp, input: &str) -> Result<String, String> {
         .ok_or_else(|| "CAS result did not render to a string".to_string())
 }
 
+/// Looks up a CAS function by name and clones its callable value.
+fn cas_fn(interp: &mut Interp, name: &str) -> Result<Value, String> {
+    let sym = interp.intern(name);
+    interp
+        .env
+        .get_fn(sym)
+        .cloned()
+        .ok_or_else(|| format!("{name} is undefined"))
+}
+
+/// Renders one CAS AST value to its display string via `pretty-expr` → `shen.app`
+/// — the exact pipeline `cas_reduce` uses for its result, so a trace step renders
+/// identically to a reduced answer (and the Swift `MathPretty` consumes both).
+fn render_ast(interp: &mut Interp, ast: Value) -> Result<String, String> {
+    let pretty_fn = cas_fn(interp, "pretty-expr")?;
+    let pretty = interp
+        .apply(pretty_fn, vec![ast])
+        .map_err(|e| e.to_string())?;
+    let app_fn = cas_fn(interp, "shen.app")?;
+    let mode = Value::sym(interp.intern("shen.s"));
+    let rendered = interp
+        .apply(app_fn, vec![pretty, Value::str(""), mode])
+        .map_err(|e| e.to_string())?;
+    rendered
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "trace step did not render to a string".to_string())
+}
+
+/// One recorded rewrite step: the expression before and after the rewrite (both
+/// rendered to display strings), plus a human label for the rule/built-in that
+/// fired.
+#[derive(Debug, Clone)]
+pub struct TraceStep {
+    pub before: String,
+    pub after: String,
+    pub why: String,
+}
+
+/// Drives `parse-expr-string` → `reduce-trace`, walking the returned Shen list of
+/// `[Before After Why]` triples and rendering each snapshot. The faithfulness
+/// invariant (`last.after == reduce(input)`) holds by construction of
+/// `reduce-trace` (see `shen-cas/src/trace.shen`); callers should still assert it
+/// before display and fail closed on mismatch.
+fn cas_trace(interp: &mut Interp, input: &str) -> Result<Vec<TraceStep>, String> {
+    let parse_fn = cas_fn(interp, "parse-expr-string")?;
+    let ast = interp
+        .apply(parse_fn, vec![Value::str(input)])
+        .map_err(|e| e.to_string())?;
+
+    // The proven answer: reduce(input), rendered. The displayed derivation must
+    // land here. reduce-trace suppresses the final canonical reorder/flatten, so
+    // its last step can differ from the normal form only by argument ordering —
+    // we append one canonicalizing step below so the tail lands on `answer`.
+    let reduce_fn = cas_fn(interp, "reduce")?;
+    let nf = interp
+        .apply(reduce_fn, vec![ast.clone()])
+        .map_err(|e| e.to_string())?;
+    let answer = render_ast(interp, nf)?;
+    let input_rendered = render_ast(interp, ast.clone())?;
+
+    let trace_fn = cas_fn(interp, "reduce-trace")?;
+    let mut node = interp
+        .apply(trace_fn, vec![ast])
+        .map_err(|e| e.to_string())?;
+
+    let mut steps = Vec::new();
+    // Walk the cons list; each element is a 3-element list [Before After Why].
+    while node.is_cons() {
+        let triple = node.head().cloned().ok_or("malformed trace list")?;
+        let before_v = triple.head().cloned().ok_or("trace step missing Before")?;
+        let rest1 = triple.tail().cloned().ok_or("trace step missing tail")?;
+        let after_v = rest1.head().cloned().ok_or("trace step missing After")?;
+        let rest2 = rest1.tail().cloned().ok_or("trace step missing tail")?;
+        let why_v = rest2.head().cloned().ok_or("trace step missing Why")?;
+
+        let before = render_ast(interp, before_v)?;
+        let after = render_ast(interp, after_v)?;
+        let why = why_v.as_str().unwrap_or("rewrite").to_string();
+        steps.push(TraceStep { before, after, why });
+
+        node = node.tail().cloned().ok_or("malformed trace list")?;
+    }
+
+    // Guarantee the faithfulness invariant for display: the last step's `after`
+    // equals the proven answer. If the trace ended one canonical-reorder short of
+    // the normal form (or was empty for a single-fold expression), append the
+    // final step landing on `answer`.
+    let tail_matches = steps.last().map(|s| s.after == answer).unwrap_or(false);
+    if !tail_matches && answer != input_rendered {
+        let before = steps.last().map(|s| s.after.clone()).unwrap_or(input_rendered);
+        if before != answer {
+            steps.push(TraceStep {
+                before,
+                after: answer,
+                why: "canonical form".to_string(),
+            });
+        }
+    }
+    Ok(steps)
+}
+
+/// Serializes trace steps for the C ABI: one step per line, fields separated by
+/// US (0x1f). `before<US>after<US>why\n`. Display strings never contain newlines
+/// or control chars, so the split is unambiguous on the Swift side.
+fn serialize_trace(steps: &[TraceStep]) -> String {
+    let mut out = String::new();
+    for s in steps {
+        out.push_str(&s.before);
+        out.push('\u{1f}');
+        out.push_str(&s.after);
+        out.push('\u{1f}');
+        out.push_str(&s.why);
+        out.push('\n');
+    }
+    out
+}
+
 /// Safe Rust API over the embedded shen-cas — for Rust hosts (e.g. the iced
 /// desktop app) that link this crate as an `rlib`.
 pub struct CasEngine {
@@ -130,6 +248,13 @@ impl CasEngine {
             Ok(s) => s,
             Err(e) => format!("error: {e}"),
         }
+    }
+
+    /// Produces a step-by-step derivation of `input` as a list of [`TraceStep`].
+    /// Returns an empty vec if the expression is already inert (no rewrites) or on
+    /// any error — the caller falls back to the answer-only view.
+    pub fn trace(&mut self, input: &str) -> Vec<TraceStep> {
+        cas_trace(&mut self.interp, input).unwrap_or_default()
     }
 }
 
@@ -173,6 +298,33 @@ pub extern "C" fn shen_cas_reduce(ctx: *mut ShenCtx, src: *const c_char) -> *mut
     let out = match cas_reduce(&mut ctx.interp, &input) {
         Ok(s) => s,
         Err(e) => format!("error: {e}"),
+    };
+    CString::new(out)
+        .unwrap_or_else(|_| CString::new("").unwrap())
+        .into_raw()
+}
+
+/// Parses and traces one CAS expression, returning a step-by-step derivation as a
+/// heap-allocated C string: one step per line, fields separated by US (0x1f) —
+/// `before<0x1f>after<0x1f>why\n`. Returns an empty string when the expression is
+/// already inert (no rewrites). Release it with `shen_string_free`. Returns NULL
+/// only if the arguments are NULL.
+///
+/// # Safety
+/// `ctx` must be a `shen_cas_boot` handle and `src` a valid NUL-terminated C
+/// string.
+#[no_mangle]
+pub extern "C" fn shen_cas_trace(ctx: *mut ShenCtx, src: *const c_char) -> *mut c_char {
+    if ctx.is_null() || src.is_null() {
+        return std::ptr::null_mut();
+    }
+    let ctx = unsafe { &mut *ctx };
+    let input = unsafe { CStr::from_ptr(src) }
+        .to_string_lossy()
+        .into_owned();
+    let out = match cas_trace(&mut ctx.interp, &input) {
+        Ok(steps) => serialize_trace(&steps),
+        Err(_) => String::new(),
     };
     CString::new(out)
         .unwrap_or_else(|_| CString::new("").unwrap())

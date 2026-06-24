@@ -125,6 +125,14 @@ final class LearningSession: ObservableObject {
     @Published private(set) var slotCount: Int = 0
     /// Running count of mastery-credit (correct) answers this session.
     @Published private(set) var correctCount: Int = 0
+    /// Verified worked-solution steps revealed so far on the current problem (one
+    /// more per `requestHint()`). Empty until the learner asks for a hint.
+    @Published private(set) var revealedSteps: [Step] = []
+    /// Whether more verified steps remain to reveal for the current problem.
+    @Published private(set) var moreStepsAvailable = false
+    /// True once a hint was requested but the engine produced no verified steps
+    /// (already-inert problem, or trace failed its faithfulness check).
+    @Published private(set) var noStepsAvailable = false
 
     // MARK: Collaborators
 
@@ -142,9 +150,13 @@ final class LearningSession: ObservableObject {
     private var presentedAt: Date = .distantPast
     /// Submissions on the current problem (1 = first try). Reset per slot.
     private var triesOnCurrent = 0
-    /// Hints revealed on the current problem. Reset per slot. (Hint UI is a later
-    /// part; tracked here so the FSRS grade already reflects assistance.)
+    /// Hints revealed on the current problem. Reset per slot; feeds the FSRS grade
+    /// so assistance is reflected in mastery.
     private var hintsOnCurrent = 0
+    /// Lazily-fetched verified worked solution for the current problem, and whether
+    /// the (one-shot) fetch has run. Reset per slot.
+    private var worked: WorkedSolution?
+    private var workedFetched = false
     /// Seed counter so each generated item is reproducible yet distinct.
     private var rngCounter: UInt64 = 0
 
@@ -188,6 +200,11 @@ final class LearningSession: ObservableObject {
         justUnlocked = []
         triesOnCurrent = 0
         hintsOnCurrent = 0
+        revealedSteps = []
+        moreStepsAvailable = false
+        noStepsAvailable = false
+        worked = nil
+        workedFetched = false
 
         while slotIndex < slots.count {
             let slot = slots[slotIndex]
@@ -286,13 +303,25 @@ final class LearningSession: ObservableObject {
         phase = .graded(result.verdict)
     }
 
-    /// Reveal the next worked step / hint for the current problem (increments the
-    /// assistance counter so the derived FSRS grade reflects it). Returns the steps
-    /// available to show; empty until the trace FFI ships.
-    @discardableResult
-    func requestHint() -> [Step] {
+    /// Reveal the next verified worked step for the current problem, fetching the
+    /// CAS-traced derivation on first request and revealing one more step each call.
+    /// Increments the assistance counter so the derived FSRS grade reflects the help.
+    /// Updates `revealedSteps` / `moreStepsAvailable` for the UI.
+    func requestHint() async {
+        guard let instance = current else { return }
         hintsOnCurrent += 1
-        return current?.steps ?? []
+
+        if !workedFetched {
+            workedFetched = true
+            // Trace the problem's CAS input (e.g. "Solve[...==0, x]"). The result is
+            // verified (last step == reduce(input)) or nil; nil → no steps to show.
+            worked = await cas.trace(instance.answerExpr)
+        }
+        let all = worked?.steps ?? []
+        noStepsAvailable = all.isEmpty
+        let next = min(revealedSteps.count + 1, all.count)
+        revealedSteps = Array(all.prefix(next))
+        moreStepsAvailable = next < all.count
     }
 
     /// Advance to the next slot after a graded answer. If the answer was wrong, the

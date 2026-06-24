@@ -21,14 +21,14 @@ final class CASClient: CASEvaluator {
     /// app this is the live `ShenCAS` (which conforms to `CASEvaluator`).
     private let engine: CASEvaluator
 
-    /// Capability flag for the worked-step trace. OFF by default: `shen_cas_trace`
-    /// is not wired yet (Part D). `trace(_:)` returns `nil` while this is false,
-    /// and the parser in `WorkedSolution.swift` is a no-op stub. Flipping this to
-    /// `true` (once the FFI lands) enables tracing with NO caller changes — every
-    /// caller already handles a `nil` result as "no steps available".
+    /// Capability flag for the worked-step trace. ON by default now that Part D has
+    /// wired `shen_cas_trace`. When the injected engine is a `CASTracer` (the live
+    /// `ShenCAS`), `trace(_:)` returns a faithfulness-checked `WorkedSolution`;
+    /// otherwise (a test stub that only reduces) it degrades to `nil`. Callers
+    /// already treat `nil` as "no steps available", so a non-tracing engine is safe.
     let traceEnabled: Bool
 
-    init(engine: CASEvaluator, traceEnabled: Bool = false) {
+    init(engine: CASEvaluator, traceEnabled: Bool = true) {
         self.engine = engine
         self.traceEnabled = traceEnabled
     }
@@ -143,16 +143,14 @@ final class CASClient: CASEvaluator {
 
     /// Produce a verified worked solution (rewrite steps) for `input`.
     ///
-    /// Returns `nil` when tracing is unavailable — which is ALWAYS the case until
-    /// Part D wires `shen_cas_trace`, gated by `traceEnabled`. Callers must treat
-    /// `nil` as "no steps available" and fall back to the single-line solution.
-    /// When the flag flips on, this method will reduce-with-trace and hand the raw
-    /// trace to `WorkedSolution.parse(trace:input:cas:)` — no caller change needed.
+    /// Returns `nil` when tracing is unavailable — the flag is off, the engine is
+    /// not a `CASTracer` (e.g. a test stub), the expression is already inert, or the
+    /// parsed trace fails its faithfulness invariant. Callers treat `nil` as "no
+    /// steps available" and fall back to the single-line solution. A non-nil result
+    /// is *verified*: its last step is the engine's own normal form.
     func trace(_ input: String) async -> WorkedSolution? {
-        guard traceEnabled else { return nil }
-        // Part D: invoke shen_cas_trace via the engine, then
-        //   return await WorkedSolution.parse(trace: raw, input: input, cas: self)
-        // Until the FFI lands there is no trace channel, so report unavailable.
-        return nil
+        guard traceEnabled, let tracer = engine as? CASTracer else { return nil }
+        guard let raw = await tracer.traceRaw(input), !raw.isEmpty else { return nil }
+        return await WorkedSolution.parse(trace: raw, input: input, cas: self)
     }
 }

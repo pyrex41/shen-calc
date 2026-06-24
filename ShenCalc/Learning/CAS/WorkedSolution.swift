@@ -42,28 +42,42 @@ extension WorkedSolution {
 
     /// Parse the raw `shen_cas_trace` reply into a faithful `WorkedSolution`.
     ///
-    /// STUB: tracing is gated behind `CASClient.traceEnabled`, which is OFF until
-    /// Part D wires the `shen_cas_trace` FFI. Until then there is no trace format
-    /// to parse, so this is a no-op that returns `nil` ("no steps available").
+    /// Wire format (from the `shen_cas_trace` C ABI): one rewrite step per line,
+    /// three fields separated by US (0x1f) — `before<US>after<US>why`. `before`/
+    /// `after` are bracket S-expr strings (the same dialect `reduce` returns), so
+    /// they render through `MathPretty.render` exactly like a reduced answer.
     ///
-    /// When Part D lands, this will:
-    ///  1. Parse `trace` — expected shape is a list of `[Before After Why]`
-    ///     records in the same bracket S-expr dialect `CASExpr.parse` already
-    ///     reads.
-    ///  2. Map each record to `Step(beforePretty: MathPretty.render(before),
-    ///     afterPretty: MathPretty.render(after), why: <label>)`.
-    ///  3. Assert the faithfulness invariant documented on `WorkedSolution`
-    ///     (start == render(input), end == render(reduce(input)), contiguous),
-    ///     reducing `input` via `cas` for the end-state check.
-    ///  4. Return `nil` if the trace is empty or fails the invariant.
-    ///
-    /// The signature is final so flipping `traceEnabled` later needs no caller or
-    /// signature change.
+    /// Faithfulness (a wrong explanation is worse than none — fail closed to `nil`):
+    ///  1. the chain ends at the engine's normal form: last `after` == reduce(input),
+    ///  2. the chain is contiguous: each step's `after` == the next step's `before`.
+    /// (The Rust side guarantees both by construction — it appends a final
+    /// canonical step landing on `reduce(input)` — but we re-check here so a future
+    /// format drift can never surface an unfaithful derivation.)
     static func parse(trace raw: String,
                       input: String,
                       cas: CASEvaluator) async -> WorkedSolution? {
-        // No trace channel yet (Part D). Treat any input as "unavailable".
-        _ = (raw, input, cas)
-        return nil
+        let lines = raw.split(separator: "\n", omittingEmptySubsequences: true)
+        var steps: [Step] = []
+        var lastAfterRaw = ""
+        for line in lines {
+            let f = line.components(separatedBy: "\u{1f}")
+            guard f.count == 3 else { return nil }   // malformed → fail closed
+            lastAfterRaw = f[1]
+            steps.append(Step(beforePretty: MathPretty.render(f[0]),
+                              afterPretty: MathPretty.render(f[1]),
+                              why: f[2]))
+        }
+        guard !steps.isEmpty else { return nil }
+
+        // (2) contiguity.
+        for i in 0..<(steps.count - 1) where steps[i].afterPretty != steps[i + 1].beforePretty {
+            return nil
+        }
+        // (1) the chain lands on the engine's proven normal form.
+        let answer = await cas.reduce(input)
+        guard !CASExpr.isError(answer) else { return nil }
+        guard MathPretty.render(lastAfterRaw) == MathPretty.render(answer) else { return nil }
+
+        return WorkedSolution(input: input, result: answer, steps: steps)
     }
 }

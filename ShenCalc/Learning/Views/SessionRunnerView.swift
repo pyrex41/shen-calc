@@ -50,6 +50,7 @@ struct SessionRunnerView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header
                 problemCard
+                stepsSection
                 Spacer(minLength: 0)
                 composer
                 feedbackBar
@@ -93,6 +94,46 @@ struct SessionRunnerView: View {
             .padding(18)
             .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
         }
+    }
+
+    // MARK: - Verified worked steps
+
+    /// Progressive hint UI: each tap reveals one more *verified* rewrite step
+    /// (last step is provably the engine's normal form). Empty until requested.
+    @ViewBuilder
+    private var stepsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(session.revealedSteps.enumerated()), id: \.offset) { i, step in
+                HStack(alignment: .top, spacing: 8) {
+                    Text("\(i + 1).")
+                        .font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(step.afterPretty)
+                            .font(.system(.subheadline, design: .serif)).foregroundStyle(.white)
+                        Text(step.why)
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if session.current != nil {
+                if session.noStepsAvailable {
+                    Label("No steps to show", systemImage: "info.circle")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if session.revealedSteps.isEmpty || session.moreStepsAvailable {
+                    Button {
+                        Task { await session.requestHint() }
+                    } label: {
+                        Label(session.revealedSteps.isEmpty ? "Show steps" : "Next step",
+                              systemImage: "lightbulb")
+                            .font(.caption.weight(.medium))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(accent)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.default, value: session.revealedSteps.count)
     }
 
     // MARK: - Composer

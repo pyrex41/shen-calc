@@ -19,7 +19,13 @@ ShenCtx *shen_cas_boot(void);
  * release it with shen_string_free(). */
 char *shen_cas_reduce(ShenCtx *ctx, const char *src);
 
-/* Free a string returned by shen_cas_reduce(). */
+/* Parse + trace a CAS expression, returning a step-by-step derivation:
+ * one step per line, fields separated by US (0x1f) -> "before\x1fafter\x1fwhy\n".
+ * Empty string when the expression is already inert. Same thread/stack
+ * requirements as shen_cas_reduce(). Release with shen_string_free(). */
+char *shen_cas_trace(ShenCtx *ctx, const char *src);
+
+/* Free a string returned by shen_cas_reduce() or shen_cas_trace(). */
 void shen_string_free(char *s);
 
 /* Free a handle returned by shen_cas_boot(). */
