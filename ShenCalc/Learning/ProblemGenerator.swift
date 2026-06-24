@@ -363,7 +363,15 @@ struct CASGrader: Grader {
     private func gradeValue(_ student: String,
                             _ inst: ProblemInstance,
                             _ cas: CASEvaluator) async -> GradeResult {
-        let expanded = await cas.reduce(CASExpr.expandDiff(student, inst.canonicalAnswerCAS))
+        // Grade against `answerExpr`, NOT `canonicalAnswerCAS`. The latter is
+        // reduce's OUTPUT form (e.g. "[8 / 3]", "[Plus [Power x 2] ...]"), which is
+        // not valid CAS *input* syntax — feeding it into Expand[(student) - (…)]
+        // errors out and every answer reads as malformed. `answerExpr` is the
+        // input-syntax expression whose reduction defines the answer, so the
+        // difference-to-zero oracle round-trips. (reduce(answerExpr) ==
+        // canonicalAnswerCAS by construction, so the value compared is identical.)
+        let correct = inst.answerExpr
+        let expanded = await cas.reduce(CASExpr.expandDiff(student, correct))
         if CASExpr.isError(expanded) {
             return miss(.malformed, inst,
                         "I couldn't read that expression — check your syntax.", residue: expanded)
@@ -371,7 +379,7 @@ struct CASGrader: Grader {
         if CASExpr.isZero(expanded) { return hit(inst) }
 
         // Fallback: some non-polynomial equivalences don't flatten under Expand.
-        let simplified = await cas.reduce(CASExpr.simplifyDiff(student, inst.canonicalAnswerCAS))
+        let simplified = await cas.reduce(CASExpr.simplifyDiff(student, correct))
         if !CASExpr.isError(simplified), CASExpr.isZero(simplified) { return hit(inst) }
 
         return miss(.incorrect, inst,
