@@ -572,6 +572,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cas-engine"
+version = "0.1.0"
+dependencies = [
+ "shen-rust",
+]
+
+[[package]]
 name = "castaway"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4563,18 +4570,11 @@ version = "0.1.0"
 dependencies = [
  "candle-core",
  "candle-transformers",
+ "cas-engine",
  "hf-hub",
  "iced",
  "regex",
- "shenffi",
  "tokenizers 0.21.4",
-]
-
-[[package]]
-name = "shenffi"
-version = "0.1.0"
-dependencies = [
- "shen-rust",
 ]
 
 [[package]]

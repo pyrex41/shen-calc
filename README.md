@@ -1,12 +1,13 @@
 # ShenCalc
 
 A SwiftUI iOS **symbolic calculator** powered by the [shen-cas](../shen-cas)
-computer-algebra system — tree-shaken with [ratatoskr](../ratatoskr), embedded
-in [shen-rust](../shen-rust) via the [shenffi](../shen-rust/crates/shenffi) C
-ABI, and called from Swift.
+computer-algebra system — tree-shaken with [ratatoskr](../ratatoskr), wrapped by
+the local [`cas-engine`](cas-engine) crate (which embeds the shaken CAS over the
+[shen-rust](../shen-rust) interpreter), and called from Swift via its
+`shen_cas_*` C ABI.
 
 ```
-input ─▶ MathInterpreter ─▶ shen-cas syntax ─▶ ShenCAS (shenffi/shen-rust) ─▶ result
+input ─▶ MathInterpreter ─▶ shen-cas syntax ─▶ ShenCAS (cas-engine) ─▶ result
  │              │                "D[Sin[x],x]"        tree-shaken CAS            "[Cos x]"
  │        Phase 1: passthrough (type syntax directly)
  │        Phase 2: on-device Gemma (English / photo → syntax)
@@ -45,21 +46,21 @@ they're intentionally left off the keys.)
 
 | file | role |
 |------|------|
-| `ShenCAS.swift` | Boots shen-cas on a 256 MB-stack thread (tree-walked CAS recursion needs it) and serves `reduce` calls via the shenffi C ABI |
+| `ShenCAS.swift` | Boots shen-cas on a 64 MB-stack thread (tree-walked CAS recursion needs it) and serves `reduce` calls via the cas-engine C ABI |
 | `MathInterpreter.swift` | `MathInterpreter` protocol; `PassthroughInterpreter` (syntax mode); `NLEngine` factory (returns the MLX interpreter when available) |
 | `MLXInterpreter.swift` | On-device Gemma → shen-cas syntax (text via LLM, photos via VLM). `#if canImport`-gated |
 | `ContentView.swift` | The UI: transcript, example chips, Syntax/English/Photo mode picker, photo picker |
-| `Bridging-Header.h` | `#include "shenffi.h"` |
+| `Bridging-Header.h` | `#include "shencas.h"` |
 
 ## Build & run (Phase 1, simulator)
 
-Requires the shenffi xcframework — build it first:
+Requires the ShenCAS xcframework — build it first:
 ```sh
-../shen-rust/crates/shenffi/build-xcframework.sh   # -> ../shen-rust/target/ShenRust.xcframework
+cas-engine/build-xcframework.sh   # -> cas-engine/target/ShenCAS.xcframework
 xcodegen generate
 open ShenCalc.xcodeproj         # ⌘R on a simulator or device
 ```
-Headless (the shenffi simulator slice is arm64-only, so exclude x86_64):
+Headless (the ShenCAS simulator slice is arm64-only, so exclude x86_64):
 ```sh
 xcodebuild -scheme ShenCalc -sdk iphonesimulator \
   -destination 'generic/platform=iOS Simulator' \
@@ -153,7 +154,7 @@ for iterating on the on-device model without an iPhone.
 
 ```sh
 # 1. Build the Rust CAS with a macOS slice (adds macos-arm64 to the xcframework)
-../shen-rust/crates/shenffi/build-xcframework.sh
+cas-engine/build-xcframework.sh
 
 # 2. Generate the project and build/run the Mac target
 xcodegen generate

@@ -1,7 +1,7 @@
 //! ShenCalc — a native, cross-platform symbolic calculator GUI.
 //!
 //! Pure Rust: the [iced] UI talks straight to the embedded shen-cas engine
-//! (`shenffi::CasEngine`) — no FFI, no Swift, no MLX. This is the Syntax-mode
+//! (`cas_engine::CasEngine`) — no FFI, no Swift, no MLX. This is the Syntax-mode
 //! MVP (the user types shen-cas bracket syntax and the CAS reduces it). English
 //! mode (a small local model via `candle` that maps NL → the CAS tool grammar)
 //! is the planned next layer.
@@ -22,7 +22,7 @@ use std::thread;
 use iced::futures::channel::oneshot;
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Element, Length, Task};
-use shenffi::CasEngine;
+use cas_engine::CasEngine;
 
 /// 64 MB — 4× the ~16 MB the reducer needs at depth, matching ShenCAS.swift.
 const WORKER_STACK: usize = 64 * 1024 * 1024;

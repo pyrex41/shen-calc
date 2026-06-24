@@ -16,7 +16,7 @@ settings:
     CODE_SIGNING_ALLOWED: NO
     SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
     TARGETED_DEVICE_FAMILY: "1,2"
-    # The shenffi xcframework simulator slice is arm64-only (it targets Apple
+    # The ShenCAS xcframework simulator slice is arm64-only (it targets Apple
     # silicon). Exclude x86_64 so simulator links resolve on an arm64 Mac.
     "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
 # ── Phase 2: on-device Gemma (English / photo input) ───────────────────────────
@@ -47,12 +47,12 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
         HEADER_SEARCH_PATHS:
-          - $(SRCROOT)/../shen-rust/target/ShenRust.xcframework/ios-arm64/Headers
-          - $(SRCROOT)/../shen-rust/target/ShenRust.xcframework/ios-arm64-simulator/Headers
+          - $(SRCROOT)/cas-engine/target/ShenCAS.xcframework/ios-arm64/Headers
+          - $(SRCROOT)/cas-engine/target/ShenCAS.xcframework/ios-arm64-simulator/Headers
         OTHER_LDFLAGS:
           - -lc++
     dependencies:
-      - framework: ../shen-rust/target/ShenRust.xcframework
+      - framework: cas-engine/target/ShenCAS.xcframework
         embed: false
       - package: mlx-swift-lm
         product: MLXLLM
@@ -89,11 +89,11 @@ targets:
         SUPPORTS_MACCATALYST: NO
         TARGETED_DEVICE_FAMILY: ""
         HEADER_SEARCH_PATHS:
-          - $(SRCROOT)/../shen-rust/target/ShenRust.xcframework/macos-arm64/Headers
+          - $(SRCROOT)/cas-engine/target/ShenCAS.xcframework/macos-arm64/Headers
         OTHER_LDFLAGS:
           - -lc++
     dependencies:
-      - framework: ../shen-rust/target/ShenRust.xcframework
+      - framework: cas-engine/target/ShenCAS.xcframework
         embed: false
       - package: mlx-swift-lm
         product: MLXLLM

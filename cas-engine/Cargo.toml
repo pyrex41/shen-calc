@@ -1,0 +1,26 @@
+# Standalone Cargo project: the embedded shen-cas computer-algebra engine.
+#
+# Owns the tree-shaken CAS `.kl` slice (produced by `ratatoskr shake` over the
+# shen-cas sources) and exposes it two ways:
+#   - a safe Rust `CasEngine` (used by the iced app, `../shencalc-iced`)
+#   - a `shen_cas_*` C ABI packaged as ShenCAS.xcframework (used by the SwiftUI
+#     app, `../ShenCalc`)
+#
+# Lives here in shen-calc — the app that consumes it — so shen-rust's generic
+# `shenffi` C-ABI crate stays program-agnostic. Depends only on the shen-rust
+# interpreter crate, not on shenffi.
+[workspace]
+
+[package]
+name = "cas-engine"
+version = "0.1.0"
+edition = "2021"
+license = "BSD-3-Clause"
+description = "Embedded shen-cas computer-algebra engine (Rust API + C ABI) over shen-rust."
+
+[lib]
+name = "cas_engine"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+shen-rust = { path = "../../shen-rust/crates/shen-rust" }
