@@ -20,6 +20,28 @@ struct PassthroughInterpreter: MathInterpreter {
     }
 }
 
+/// A `MathInterpreter` that delegates to any `LLMProvider` (on-device or cloud).
+/// This is the bridge from the existing interpreter seam to the new pluggable
+/// provider layer: it builds the same CAS tool-call transcript `MLXInterpreter`
+/// used and runs the reply through `CASTools.parse`, so the CAS still validates
+/// every output. Construct it from `LLMProviderRegistry.make(...)` to honor the
+/// user's selected backend; `PassthroughInterpreter` remains the no-LLM default.
+struct ProviderInterpreter: MathInterpreter {
+    let provider: LLMProvider
+
+    var requiresModel: Bool { provider.isLocal }
+
+    func toCAS(text: String, imageData: Data?) async throws -> String {
+        let messages: [ChatMessage] = [
+            .system(CASTools.systemPrompt),
+            .user(text, image: imageData),
+        ]
+        let reply = try await provider.complete(messages, GenerationOptions(maxTokens: 64))
+        // The CAS reader (downstream) is the guard; we only translate intent here.
+        return CASTools.parse(reply)
+    }
+}
+
 /// An on-device text model the user can pick between at runtime. Because the CAS
 /// validates every model output, trying a smaller/faster model is low-risk — the
 /// worst case is rejected syntax, never a wrong answer — so we expose the choice

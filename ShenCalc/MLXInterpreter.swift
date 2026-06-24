@@ -22,32 +22,30 @@ import CoreImage
 // If your pinned version's loader differs, copy the load call from the package's
 // LLMEval example. Build to a REAL device — mlx-swift needs Metal (no simulator).
 
-/// On-device interpreter: an MLX-hosted Gemma model translates English (or a
-/// photo of math) into shen-cas's bracket syntax. The model only parses intent;
-/// the CAS does the math, so a wrong answer is impossible — at worst the model
-/// emits syntax the CAS rejects.
+/// On-device interpreter: an MLX-hosted model translates English (or a photo of
+/// math) into shen-cas's bracket syntax. The model only parses intent; the CAS
+/// does the math, so a wrong answer is impossible — at worst the model emits
+/// syntax the CAS rejects.
+///
+/// This is now a thin adapter over `MLXProvider` (the generic `LLMProvider` in
+/// OnDeviceProvider.swift): it builds the CAS tool-call transcript, delegates the
+/// completion to the shared provider, and runs the reply through `CASTools.parse`.
+/// One MLX session implementation, two front doors — the `MathInterpreter` seam
+/// (here) and the `LLMProvider` seam (for `VerifiedTutor`).
 @MainActor
 final class MLXInterpreter: ObservableObject, MathInterpreter {
     @Published var status: String = "idle"
 
-    // MLX-community model repos (download on first use).
-    //   text:   gemma-3-1b-it-qat-4bit  (~733 MB) fits a FREE account (no memory
-    //           entitlement) on any modern iPhone — best default.
-    //   vision: gemma-4-e4b-it-4bit     (~5.2 GB, multimodal) needs a PAID account
-    //           + the increased-memory-limit entitlement + an 8 GB iPhone.
-    //           For a lighter vision model use mlx-community/gemma-3-4b-it-4bit (~3.4 GB).
     let textModelId: String
     let visionModelId: String
 
-    private var textSession: ChatSession?
-    private var visionSession: ChatSession?
+    private let provider: MLXProvider
 
     init(textModelId: String = "mlx-community/gemma-3-1b-it-qat-4bit",
          visionModelId: String = "mlx-community/gemma-4-e4b-it-4bit") {
         self.textModelId = textModelId
         self.visionModelId = visionModelId
-        // Bound the KV cache so long sessions don't run into the jetsam limit.
-        MLX.GPU.set(cacheLimit: 20 * 1024 * 1024)
+        self.provider = MLXProvider(textModelId: textModelId, visionModelId: visionModelId)
     }
 
     var requiresModel: Bool { true }
@@ -57,36 +55,12 @@ final class MLXInterpreter: ObservableObject, MathInterpreter {
     private var systemPrompt: String { CASTools.systemPrompt }
 
     func toCAS(text: String, imageData: Data?) async throws -> String {
-        if imageData != nil {
-            if visionSession == nil {
-                status = "loading vision model…"
-                let model = try await loadModelContainer(from: #hubDownloader(), using: #huggingFaceTokenizerLoader(), id: visionModelId)
-                visionSession = ChatSession(model, instructions: systemPrompt)
-                status = "ready"
-            }
-            guard let session = visionSession else { throw err("vision model unavailable") }
-            let prompt = text.isEmpty ? "Convert the math shown in the image." : text
-            let reply: String
-            if let data = imageData, let ci = CIImage(data: data) {
-                reply = try await session.respond(to: prompt, image: .ciImage(ci))
-            } else {
-                reply = try await session.respond(to: prompt)
-            }
-            return CASTools.parse(reply)
-        } else {
-            if textSession == nil {
-                status = "loading model…"
-                let model = try await loadModelContainer(from: #hubDownloader(), using: #huggingFaceTokenizerLoader(), id: textModelId)
-                textSession = ChatSession(model, instructions: systemPrompt)
-                status = "ready"
-            }
-            guard let session = textSession else { throw err("model unavailable") }
-            return CASTools.parse(try await session.respond(to: text))
-        }
-    }
-
-    private func err(_ m: String) -> NSError {
-        NSError(domain: "MLXInterpreter", code: 1, userInfo: [NSLocalizedDescriptionKey: m])
+        status = provider.status
+        let reply = try await provider.complete(
+            [.system(systemPrompt), .user(text, image: imageData)],
+            GenerationOptions(maxTokens: 64))
+        status = provider.status
+        return CASTools.parse(reply)
     }
 }
 #endif
