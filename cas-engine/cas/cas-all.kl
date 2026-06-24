@@ -68,7 +68,7 @@
 
 (set *normal-form-cache* ())
 
-(defun nf-cache-key (V4067 V4068) (cons (unwrap-ch V4067) (cons V4068 ())))
+(defun nf-cache-key (V4067 V4068 E) (cons (unwrap-ch V4067) (cons V4068 (cons (alpha-canonicalize E) ()))))
 
 (defun nf-lookup (V4069) (assoc V4069 (value *normal-form-cache*)))
 
@@ -2240,7 +2240,7 @@
 
 (defun reduce (V8048) (reduce-via (current-core) V8048))
 
-(defun normal-form-db (V8049 V8050) (let W8051 (content-hash V8050) (let W8052 (db-basis V8049) (let W8053 (nf-cache-key W8051 W8052) (let W8054 (nf-lookup W8053) (if (assoc-hit? W8054) (hd (tl W8054)) (let W8055 (reduce-db V8049 V8050) (let W8056 (nf-store! W8053 W8055) W8055))))))))
+(defun normal-form-db (V8049 V8050) (let W8051 (content-hash V8050) (let W8052 (db-basis V8049) (let W8053 (nf-cache-key W8051 W8052 V8050) (let W8054 (nf-lookup W8053) (if (assoc-hit? W8054) (hd (tl W8054)) (let W8055 (reduce-db V8049 V8050) (let W8056 (nf-store! W8053 W8055) W8055))))))))
 
 (defun normal-form (V8057) (normal-form-via (current-core) V8057))
 
