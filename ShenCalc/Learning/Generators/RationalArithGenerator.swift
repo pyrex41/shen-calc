@@ -29,9 +29,13 @@ struct RationalArithGenerator: ProblemGenerator {
                                             cas: CASEvaluator) async -> ProblemInstance? {
         let built = buildExpression(difficulty: difficulty, using: &rng)
 
-        // Together folds the sum/difference of fractions into one reduced fraction;
-        // it is the rational answer key the grader compares against.
-        let answerExpr = "Together[\(built.infix)]"
+        // The bare fraction arithmetic already reduces to a single lowest-terms
+        // rational (e.g. "(8)/(4) - (-4)/(6)" → 8/3). We do NOT wrap in Together:
+        // on an expression that is already a single fraction Together stays inert
+        // (`[Together [8 / 3]]`), which would both display wrong and break grading.
+        // `answerExpr` stays in re-parseable input syntax so the grader can compare
+        // a student answer against it directly.
+        let answerExpr = built.infix
         let canonical = await cas.reduce(answerExpr)
         if CASExpr.isError(canonical) { return nil }
 

@@ -24,9 +24,20 @@ extension ProblemInstance {
                                revealedSteps: steps, message: "Enter an answer.")
         }
 
+        // Grade against a RE-PARSEABLE expression. `canonicalAnswerCAS` holds
+        // reduce's OUTPUT form (e.g. "[Plus [Power x 2] ...]"), which is NOT valid
+        // CAS *input* syntax — feeding it back into the engine errors. So for
+        // expression/list/factorization we grade against `answerExpr` (the
+        // input-syntax expression whose reduction IS the answer). Solution sets are
+        // the exception: their grader parses the reduced "[List …]" output, so they
+        // still need `canonicalAnswerCAS`.
+        let against: String
+        if case .solutionSet = answerKind { against = canonicalAnswerCAS }
+        else { against = answerExpr }
+
         let verdict = await client.grade(student: studentInput,
                                          against: answerKind,
-                                         canonicalAnswerCAS: canonicalAnswerCAS)
+                                         canonicalAnswerCAS: against)
 
         switch verdict {
         case .correct:
