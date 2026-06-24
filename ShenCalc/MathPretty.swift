@@ -75,6 +75,16 @@ enum MathPretty {
             case "Exp":   return wrapIf(parent == .power, "e^" + emit(args[0], parent: .power))
             case "Log":   return "ln(" + emit(args.first ?? .atom(""), parent: .fn) + ")"
             case "Sqrt":  return "√(" + emit(args.first ?? .atom(""), parent: .fn) + ")"
+            // Minus/Divide heads are never emitted by `reduce` (it uses Plus+negatives
+            // and the `/` infix form), but generators build prompts with them.
+            case "Minus" where args.count == 2:
+                // a − b, parenthesising a negative right operand: 8/4 − (−4/6).
+                let rhs = emit(args[1], parent: .product)
+                let rhsShown = rhs.hasPrefix("-") ? "(\(rhs))" : rhs
+                return wrapIf(parent == .product || parent == .power,
+                              "\(emit(args[0], parent: .sum)) - \(rhsShown)")
+            case "Divide" where args.count == 2:
+                return fraction(num: args[0], den: args[1], parent: parent)
             default:
                 if isFunction(head), let a = args.first, args.count == 1 {
                     return head.lowercased() + "(" + emit(a, parent: .fn) + ")"
@@ -125,6 +135,31 @@ enum MathPretty {
         var body = pieces.isEmpty ? "1" : pieces.joined(separator: "·")
         if negative { body = "-" + body }
         return wrapIf(parent == .power, body)
+    }
+
+    /// Render a `[Divide num den]` head as `num/den`, parenthesising operands that
+    /// are themselves sums or fractions so a division of fractions reads clearly:
+    /// `(a/b)/(c/d)` rather than the ambiguous `a/b/c/d`.
+    private static func fraction(num: Node, den: Node, parent: Ctx) -> String {
+        let s = "\(wrapFraction(num))/\(wrapFraction(den))"
+        return parent == .power ? "(\(s))" : s
+    }
+
+    private static func wrapFraction(_ node: Node) -> String {
+        let s = emit(node, parent: .product)
+        let compound: Bool
+        switch node {
+        case .list(let l) where l.count == 3:
+            if case .atom(let op) = l[1], ["/", "+", "-", "*"].contains(op) { compound = true }
+            else if case .atom(let h)? = l.first, ["Divide", "Plus", "Minus"].contains(h) { compound = true }
+            else { compound = false }
+        case .list(let l):
+            if case .atom(let h)? = l.first, ["Divide", "Plus", "Minus"].contains(h) { compound = true }
+            else { compound = false }
+        default:
+            compound = false
+        }
+        return compound ? "(\(s))" : s
     }
 
     private static func power(_ args: [Node], parent: Ctx) -> String {
