@@ -47,6 +47,17 @@ const CAS_PROG: &str = include_str!("../cas/cas-all.kl");
 /// the initialised environment). The program load runs with `*hush*` set, so
 /// its "…loaded" chatter to stdout is suppressed (file writes still happen).
 fn boot_shaken(kernel: &str, prog: Option<&str>) -> Result<Interp, String> {
+    // A CasEngine is long-lived and reduces thousands of subterms per call. The
+    // shen-rust thread-local heap is grow-only by default, so without GC it
+    // climbs unboundedly across reduces and eventually OOMs (shen-rust issue #8
+    // perf). shen-rust ships a correct request-mode GC that collects at depth-0
+    // safepoints; it's opt-in via SHEN_RUST_GC=<floor-nodes>, enabled by
+    // `Interp::new` for a fresh sole interp on the thread (our case). Opt in here
+    // (≈1M-node floor) unless the caller already configured it. NB: must be set
+    // before `Interp::new` reads it; edition-2021 `set_var` is safe.
+    if std::env::var_os("SHEN_RUST_GC").is_none() {
+        std::env::set_var("SHEN_RUST_GC", "1048576");
+    }
     let mut interp = Interp::new();
     boot_from_kl_source(&mut interp, kernel, None).map_err(|e| e.to_string())?;
     if let Some(p) = prog {

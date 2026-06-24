@@ -42,14 +42,19 @@ fn memo_is_sound_and_boot_order_independent() {
 
             // Boot 1: one long-lived engine reduces the whole battery in order —
             // the session-state path that exposed the memo collision.
-            let mut e1 = CasEngine::boot().expect("boot 1");
-            let got1: Vec<String> = CASES.iter().map(|(i, _)| e1.reduce(i)).collect();
+            let got1: Vec<String> = {
+                let mut e1 = CasEngine::boot().expect("boot 1");
+                CASES.iter().map(|(i, _)| e1.reduce(i)).collect()
+            };
             assert_eq!(got1, want, "first boot produced a wrong/inert reduction");
 
             // Boot 2 on the same thread (shared thread-local heap): must agree —
-            // the boot-order nondeterminism the issue reported.
-            let mut e2 = CasEngine::boot().expect("boot 2");
-            let got2: Vec<String> = CASES.iter().map(|(i, _)| e2.reduce(i)).collect();
+            // the boot-order nondeterminism the issue reported. (e1 is dropped
+            // first so this fresh sole interp also enables request-mode GC.)
+            let got2: Vec<String> = {
+                let mut e2 = CasEngine::boot().expect("boot 2");
+                CASES.iter().map(|(i, _)| e2.reduce(i)).collect()
+            };
             assert_eq!(got2, got1, "two boots in one process disagree");
         })
         .unwrap()
