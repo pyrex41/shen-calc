@@ -126,14 +126,19 @@ enum MathPretty {
         let coeffs = factors.filter { isNumeric($0) }
         let rest = factors.filter { !isNumeric($0) }
         let ordered = coeffs + rest
-        let pieces = ordered.map { f -> String in
+        let pieces = ordered.enumerated().map { i, f -> String in
             let s = emit(f, parent: .product)
             // bracket fractions used as coefficients: (1/3)·x³
             if case .list(let l) = f, l.count == 3, case .atom("/") = l[1] { return "(\(s))" }
+            // parenthesise a negative numeric factor that isn't leading, so a
+            // product reads "2·(-5)" not the ambiguous "2·-5".
+            if i > 0, isNumeric(f), s.hasPrefix("-") { return "(\(s))" }
             return s
         }
         var body = pieces.isEmpty ? "1" : pieces.joined(separator: "·")
-        if negative { body = "-" + body }
+        // Applying the overall sign: parenthesise a negative body so "−1 · (−5)"
+        // renders "-(-5)" rather than the double-minus "--5".
+        if negative { body = "-" + (body.hasPrefix("-") ? "(\(body))" : body) }
         return wrapIf(parent == .power, body)
     }
 
